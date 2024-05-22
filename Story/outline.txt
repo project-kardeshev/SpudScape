@@ -1,0 +1,23 @@
+Game name: SpudScape (subject to change)
+Town name: Tuberosa (a Tuberosan citizen, or the Tuberosai as plural)
+
+description: Turn based fighting rpg with mechanics similar to pokemon. Players spawn in the town and can travel to different areas (woods, mountain, caves, etc) where they can encounter NPCs of various levels, depending on the area, to fight to gain experience.
+No in game currency, as purchases are all made with the outside-of-game crypto token CRED. The town has a shop which will spawn specific equipment people can purchase with CRED, or a blacksmith where users can mint equipment in a semi-random way (they specify rarity level and equipment is randomly minted at that level)
+The town is run by The Church of The Potato. There is a massive cathedral in town that players are not permitted to enter. (likely allow entry as a future expansion)
+The principle end game enemy is The Cult of Tripe. As a future expansion players will be able to choose a faction, either potato or tripe, but this will not be in the minimum viable product. conflict with the cult will begin relatively early and progress throughout the game, they are not restricted solely to end game.
+The world is distinctly irish, but fictional so no direct references to ireland.
+
+Combat mechanics: Players can spawn with an elemental affinity. Either "None", "Fire", "Ice", "Wind", "Earth", or "Water" (subject to change)
+    fire gives a bonus to power (attack strength)
+    ice lowers enemy speed, evasion and precision (accuracy)
+    wind gives a bonus to speed and evasion
+    earth gives a bonus to health and defense
+    water gives a slight bonus to all stats aside from health
+
+
+each element gives special attacks, like fire punch, that players learn at certain levels, or if they have a specific type of weapon equipped.
+
+As a future expansion, players will unlock a skill tree where they get plant based abilities based on their tree. Things like fungi, bacteria, perineal, annual, etc. Still working on this. Skill trees will be based on scientific fact and have an educational aspect. 
+
+Party mechanics: Initially the game will be 1v1 pve. A player can own multiple characters, but only control one at a time. In a future update you will be able to form parties at the tavern in town in order to enter combat with multiple characters at once.
+The tavern will also allow for mercenary work, where players can rent out their characters for cred.
