@@ -8,6 +8,11 @@ State.Tokens = State.Tokens or {}
 
 State.ActiveCombat = State.ActiveCombat or {}
 
+State.TransferOffers = State.TransferOffers or {
+    Buy = {},
+    Sell = {}
+}
+
 State.BaseCosts = {
     Common = 100000,
     Uncommon = 250000,
@@ -49,6 +54,10 @@ State.Tokens = {}
 State.PendingMints = {}
 State.NextID = 1
 State.ActiveCombat = {}
+State.TransferOffers = {
+    Buy = {},
+    Sell = {}
+}
 end
 
 return State

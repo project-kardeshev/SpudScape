@@ -10,6 +10,7 @@ local CharacterSchemas = require("Schemas.Character")
 local EquipmentSchemas = require("Schemas.Equipment")
 local CharacterBlueprints = require("TokenBlueprints.Characters")
 local EquipmentBlueprints = require("TokenBlueprints.Equipment")
+local TransferFunctions = require("Transfer.TransferFunctions")
 
 json = require("json")
 
