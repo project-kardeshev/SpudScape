@@ -370,6 +370,7 @@ Handlers.add(
     end
 )
 
+
 Handlers.add(
     "AcceptBuyOffer",
     Handlers.utils.hasMatchingTag("Action", "AcceptBuyOffer"),
@@ -378,7 +379,22 @@ Handlers.add(
         if not success then
             print("Error accepting buy offer: " .. errorMessage)
             Send({ Target = msg.From, Action = "Error", Data = "Failed to accept buy offer: " .. errorMessage })
+        else
+            Send({ Target = msg.From, Action = "Success", Data = errorMessage })
         end
     end
 )
 
+Handlers.add(
+    "TransferToken",
+    Handlers.utils.hasMatchingTag("Action", "TransferToken"),
+    function(msg)
+        local success, errorMessage = pcall(TransferFunctions.FreeTransfer, msg)
+        if not success then
+            print("Error transferring token: " .. errorMessage)
+            Send({ Target = msg.From, Action = "Error-Message", Data = "Failed to transfer token: " .. errorMessage })
+        else
+            Send({ Target = msg.From, Action = "Info-Message", Data = errorMessage })
+        end
+    end
+)

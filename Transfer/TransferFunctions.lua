@@ -14,10 +14,14 @@ function TransferFunctions.UpdateFundingStatus(oldOffer, newOffer)
             -- Perform additional actions for higher new offer
             -- Example: deduct the difference from buyer's account or handle funds transfer
             print("New offer is higher, previous funded amount carried over.")
-            Send({ Target = newOffer.Buyer, Action = "Market-Notice", Data = "Your new offer on Token: " ..
-            newOffer.TokenID ..
-            " has been registered. Please fund the difference from your previously funded amount by transfering " ..
-            tostring(difference) .. " to this process." })
+            Send({
+                Target = newOffer.Buyer,
+                Action = "Market-Notice",
+                Data = "Your new offer on Token: " ..
+                    newOffer.TokenID ..
+                    " has been registered. Please fund the difference from your previously funded amount by transfering " ..
+                    tostring(difference) .. " to this process."
+            })
         else
             -- Perform additional actions for lower new offer
             -- Example: refund the difference to buyer's account
@@ -95,7 +99,7 @@ function TransferFunctions.WithdrawBuyOffer(msg)
             table.remove(currentBuyOffers, i)
             print("Offer withdrawn")
             -- Optionally, you can send a message back to the buyer confirming the withdrawal
-            Send({ Target = msg.From, Action = "OfferWithdrawn", Data = "Your offer has been withdrawn." })
+            Send({ Target = msg.From, Action = "Info-Message", Data = "Your offer has been withdrawn." })
             return
         end
     end
@@ -132,6 +136,19 @@ function TransferFunctions.AcceptBuyOffer(msg)
     -- Verify that the sender is the owner of the token
     if from ~= State.Tokens[tokenID].Owner then
         error("You are not the owner of this token.")
+    end
+
+    -- Check if the offer is fully funded
+    if selectedOffer.Funded < selectedOffer.Offer then
+        selectedOffer.Accepted = true
+        local remainingAmount = selectedOffer.Offer - selectedOffer.Funded
+        Send({
+            Target = selectedOffer.Buyer,
+            Action = "Info-Message",
+            Data = "Your offer has been accepted, but it is not fully funded. You need to fund an additional " ..
+            remainingAmount .. " units."
+        })
+        return "Offer accepted but not fully funded. Buyer notified of remaining amount."
     end
 
     -- Transfer ownership of the token
@@ -179,12 +196,76 @@ function TransferFunctions.AcceptBuyOffer(msg)
     -- Update the buy offers for the token
     State.TransferOffers.Buy[tokenID] = currentBuyOffers
 
-    -- TODO: handle transferring funds
+    -- Notify the buyer that the offer has been accepted and the transfer is complete
+    Send({
+        Target = selectedOffer.Buyer,
+        Action = "Info-Message",
+        Data = "Your offer of " ..
+        selectedOffer.Offer .. " for token " .. tokenID .. " has been accepted and the transfer is complete."
+    })
 
     return "Offer of " .. selectedOffer.Offer .. " for token " .. tokenID .. " accepted successfully"
 end
 
+function TransferFunctions.FreeTransfer(msg)
+    assert(msg.TokenID, "Must Specify Token")
+    assert(msg.TransferTo, "Must specify the recipient of the transfer")
 
+    local tokenID = msg.TokenID
+    local transferTo = msg.TransferTo
+    local from = msg.From
 
+    -- Verify that the sender is the owner of the token
+    if from ~= State.Tokens[tokenID].Owner then
+        error("You are not the owner of this token.")
+    end
+
+    -- Transfer ownership of the token
+    local oldOwner = State.Tokens[tokenID].Owner
+    local tokenType = State.Tokens[tokenID].Type
+    local newOwner = transferTo
+
+    if not tokenType == "Character" then
+        tokenType = "Equipment"
+    end
+
+    -- Find the token in State.Holders[oldOwner] and remove it
+    local oldOwnerTokens = State.Holders[oldOwner]
+    local tokenToTransfer = nil
+    if oldOwnerTokens then
+        for i, token in ipairs(oldOwnerTokens) do
+            if tonumber(token.TokenID) == tonumber(tokenID) then
+                if tokenType == "Equipment" and token.EquippedTo then
+                    error("Must unequip before transferring")
+                end
+                if tokenType == "Character" then
+                    GeneralFunctions.AutoUnequipAll(tostring(tokenID))
+                end
+                tokenToTransfer = table.remove(oldOwnerTokens, i)
+                break
+            end
+        end
+    end
+
+    -- Ensure the token to transfer exists
+    if not tokenToTransfer then
+        error("Token not found in the holder's inventory.")
+    end
+
+    -- Copy the token to State.Holders[newOwner]
+    if not State.Holders[newOwner] then
+        State.Holders[newOwner] = {}
+    end
+    table.insert(State.Holders[newOwner], tokenToTransfer)
+    State.Tokens[tokenID].Owner = newOwner
+    -- Notify the recipient of the transfer
+    Send({
+        Target = newOwner,
+        Action = "Info-Message",
+        Data = "You have received token " .. tokenID .. " from " .. oldOwner .. "."
+    })
+
+    return "Token " .. tokenID .. " has been transferred to " .. newOwner .. " successfully"
+end
 
 return TransferFunctions

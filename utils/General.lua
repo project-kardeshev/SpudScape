@@ -211,6 +211,42 @@ function GeneralFunctions.UnEquip(msg)
     end
 end
 
+function GeneralFunctions.AutoUnequipAll(tokenID)
+    assert(State.Tokens[tokenID], "Token does not exist")
+    assert(State.Tokens[tokenID].Type == "Character", "Must unequip from a character")
+
+    local characterToken = State.Tokens[tokenID]
+    
+    -- Ensure the characterToken exists in State.Holders
+    local owner = characterToken.Owner
+    local characterInHolders = nil
+    for _, item in ipairs(State.Holders[owner] or {}) do
+        if item.TokenID == tonumber(tokenID) then
+            characterInHolders = item
+            break
+        end
+    end
+    assert(characterInHolders, "Character token not found in holder's inventory.")
+    
+    -- Check and unequip all items
+    for _, equipmentID in ipairs(characterInHolders.Equipment or {}) do
+        local equipmentToken = State.Tokens[equipmentID]
+        if equipmentToken and equipmentToken.EquippedTo == tonumber(tokenID) then
+            equipmentToken.EquippedTo = nil
+        end
+    end
+    
+    -- Clear the character's equipment fields
+    characterInHolders.Equipment = {
+        Weapon = {},
+        Armor = {},
+        Accessories = {}
+    }
+
+    return "All equipment has been unequipped from character " .. tokenID
+end
+
+
 function GeneralFunctions.Rename(TokenID, newName)
     -- Ensure TokenID is provided and a newName is specified
     assert(TokenID, "TokenID must be provided.")
