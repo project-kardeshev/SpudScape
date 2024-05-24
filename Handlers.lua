@@ -357,3 +357,28 @@ Handlers.add(
         end
     end
 )
+
+Handlers.add(
+    "WithdrawBuyOffer",
+    Handlers.utils.hasMatchingTag("Action", "WithdrawBuyOffer"),
+    function(msg)
+        local success, errorMessage = pcall(TransferFunctions.WithdrawBuyOffer, msg)
+        if not success then
+            print("Error withdrawing buy offer: " .. errorMessage)
+            Send({ Target = msg.From, Action = "Error", Data = "Failed to withdraw buy offer: " .. errorMessage })
+        end
+    end
+)
+
+Handlers.add(
+    "AcceptBuyOffer",
+    Handlers.utils.hasMatchingTag("Action", "AcceptBuyOffer"),
+    function(msg)
+        local success, errorMessage = pcall(TransferFunctions.AcceptBuyOffer, msg)
+        if not success then
+            print("Error accepting buy offer: " .. errorMessage)
+            Send({ Target = msg.From, Action = "Error", Data = "Failed to accept buy offer: " .. errorMessage })
+        end
+    end
+)
+
