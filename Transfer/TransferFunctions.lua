@@ -50,6 +50,13 @@ function TransferFunctions.MakeOffer(msg)
     -- Get current buy offers for the specified token, or initialize it if not present
     local currentBuyOffers = State.TransferOffers.Buy[msg.TokenID] or {}
 
+    -- Check if there's an existing offer with the same token and quantity
+    for _, existingOffer in ipairs(currentBuyOffers) do
+        if existingOffer.Offer == newOffer.Offer then
+            error("An offer for this token with the same quantity already exists.")
+        end
+    end
+
     -- Check if there's an existing offer from the same buyer
     local offerUpdated = false
     for i, existingOffer in ipairs(currentBuyOffers) do
@@ -69,6 +76,8 @@ function TransferFunctions.MakeOffer(msg)
 
     -- Update the offers table in the state
     State.TransferOffers.Buy[msg.TokenID] = currentBuyOffers
+
+    return "Offer of " .. newOffer.Offer .. " for token " .. newOffer.TokenID .. " created successfully"
 end
 
 return TransferFunctions

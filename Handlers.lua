@@ -341,3 +341,19 @@ Handlers.add(
         end
     end
 )
+
+
+-- Transfer Handlers
+
+Handlers.add(
+    "MakeBuyOffer",
+    Handlers.utils.hasMatchingTag("Action", "MakeBuyOffer"),
+    function(msg)
+        local success, Message = pcall(TransferFunctions.MakeOffer, msg)
+        if not success then
+            local action = "Error-Message"
+            Send({ Target = msg.From, Action = action, Data = Message })
+        else Send({ Target = msg.From, Action = "Info-Message", Data = Message})
+        end
+    end
+)
