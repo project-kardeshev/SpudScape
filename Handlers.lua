@@ -12,16 +12,54 @@ local CharacterBlueprints = require("TokenBlueprints.Characters")
 local EquipmentBlueprints = require("TokenBlueprints.Equipment")
 local TransferFunctions = require("Transfer.TransferFunctions")
 
+
+KARD_Process = "1PIaQp_wij0H8Ykx-LuQEUqXQndryycWRjCRvV3R8lI" -- This is the test process, change it for main launch
+
 json = require("json")
 
 
-function IsMintMessage(msg)
-    if msg.Action == "Credit-Notice" then
+function IsCreditMessage(msg)
+    if msg.Action == "Credit-Notice" and msg.From == KARD_Process then
         return true
     else
         return 0
     end
 end
+
+-- Payment Handler
+
+Handlers.add(
+    "ProcessPayment",
+    IsCreditMessage,
+    function(msg)
+        if msg.Note then
+            local note = string.lower(msg.Note)
+            if note == "mint character" then
+                print("Received mint request")
+                -- Using pcall to handle errors in InitiateCharacterMint
+                local success, errorMessage = pcall(CharacterMintFunctions.MintCharacter, msg)
+                if not success then
+                    print("Error processing mint final request: " .. errorMessage)
+                end
+            elseif string.find(note, "fund offer for") then
+                local tokenID = string.match(note, "fund offer for%s*(%d+)")
+                if tokenID then
+                    print("Received fund offer request for TokenID: " .. tokenID)
+                    -- Using pcall to handle errors in FundOffer
+                    local success, errorMessage = pcall(TransferFunctions.FundOffer, msg.Sender, tonumber(tokenID), msg.Quantity)
+                    if not success then
+                        print("Error processing fund offer request: " .. errorMessage)
+                    end
+                else
+                    print("TokenID not found in the note")
+                    Send({Target = msg.Sender, Action = "Error-Message", Data = "Incorrectly formatted Note"})
+                end
+            end
+        end
+    end
+)
+
+
 
 -- Character mint handlers
 
@@ -39,18 +77,7 @@ Handlers.add(
 )
 
 
-Handlers.add(
-    "ProcessMintPayment",
-    IsMintMessage,
-    function(msg)
-        print("Received mint request")
-        -- Using pcall to handle errors in InitiateCharacterMint
-        local success, errorMessage = pcall(CharacterMintFunctions.MintCharacter, msg)
-        if not success then
-            print("Error processing mint final request: " .. errorMessage)
-        end
-    end
-)
+
 
 
 
@@ -353,7 +380,8 @@ Handlers.add(
         if not success then
             local action = "Error-Message"
             Send({ Target = msg.From, Action = action, Data = Message })
-        else Send({ Target = msg.From, Action = "Info-Message", Data = Message})
+        else
+            Send({ Target = msg.From, Action = "Info-Message", Data = Message })
         end
     end
 )
@@ -380,7 +408,7 @@ Handlers.add(
             print("Error accepting buy offer: " .. errorMessage)
             Send({ Target = msg.From, Action = "Error", Data = "Failed to accept buy offer: " .. errorMessage })
         else
-            Send({ Target = msg.From, Action = "Success", Data = errorMessage })
+            Send({ Target = msg.From, Action = "Info-Message", Data = errorMessage })
         end
     end
 )
