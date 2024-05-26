@@ -163,7 +163,10 @@ function TransferFunctions.AcceptBuyOffer(msg)
             if token.TokenID == tokenID then
                 -- If the token is a character, check if it has any equipment
                 if token.Type == "Character" and token.Equipment and #token.Equipment > 0 then
-                    -- TODO: handle unequip
+                    GeneralFunctions.AutoUnequipAll(tostring(tokenID))
+                end
+                if not token.Type == "Character" and token.EquippedTo then
+                    error("Unequip this item before transfer")
                 end
                 table.remove(oldOwnerTokens, i)
                 break
