@@ -12,19 +12,17 @@ function TransferFunctions.UpdateFundingStatus(oldOffer, newOffer)
         if difference > 0 then
             newOffer.Funded = oldFunded
             -- Perform additional actions for higher new offer
-            -- Example: deduct the difference from buyer's account or handle funds transfer
             print("New offer is higher, previous funded amount carried over.")
             Send({
                 Target = newOffer.Buyer,
-                Action = "Market-Notice",
+                Action = "Info-Notice",
                 Data = "Your new offer on Token: " ..
                     newOffer.TokenID ..
-                    " has been registered. Please fund the difference from your previously funded amount by transfering " ..
+                    " has been registered. Please fund the difference from your previously funded amount by transferring " ..
                     tostring(difference) .. " to this process."
             })
         else
             -- Perform additional actions for lower new offer
-            -- Example: refund the difference to buyer's account
             print("New offer is lower, handle fund adjustments.")
         end
     end
@@ -34,9 +32,19 @@ function TransferFunctions.MakeOffer(msg)
     assert(msg.TokenID, "Must Specify Token")
     assert(msg.Offer, "Must provide amount for offer")
     assert(tonumber(msg.Offer), "Offer amount must be a number")
+    assert(tonumber(msg.Offer) >= 1000, "Offer amount must be at least 1000")
 
     local tokenOwner = GeneralFunctions.GetOwner(msg.TokenID)
     assert(msg.From ~= tokenOwner, "Cannot make offers on Tokens you own.")
+
+    -- Check if there's an accepted offer for the token
+    local currentBuyOffers = State.TransferOffers.Buy[tostring(msg.TokenID)] or {}
+    for _, existingOffer in ipairs(currentBuyOffers) do
+        if existingOffer.Accepted then
+            error("Cannot make a new offer on this token as there is already an accepted offer.")
+        end
+    end
+
     local newOffer = {
         TokenID = msg.TokenID,
         Owner = tokenOwner,
@@ -46,14 +54,13 @@ function TransferFunctions.MakeOffer(msg)
         Offer = tonumber(msg.Offer)
     }
 
-
     -- Ensure State.TransferOffers.Buy is initialized
     if not State.TransferOffers.Buy then
         State.TransferOffers.Buy = {}
     end
 
     -- Get current buy offers for the specified token, or initialize it if not present
-    local currentBuyOffers = State.TransferOffers.Buy[msg.TokenID] or {}
+    currentBuyOffers = State.TransferOffers.Buy[msg.TokenID] or {}
 
     -- Check if there's an existing offer with the same token and quantity
     for _, existingOffer in ipairs(currentBuyOffers) do
@@ -86,6 +93,8 @@ function TransferFunctions.MakeOffer(msg)
         tostring(newOffer.Offer) .. " for token " .. tostring(newOffer.TokenID) .. " created successfully"
 end
 
+
+
 function TransferFunctions.WithdrawBuyOffer(msg)
     assert(msg.TokenID, "Must specify Token ID")
     assert(msg.From, "Must specify the buyer")
@@ -99,18 +108,20 @@ function TransferFunctions.WithdrawBuyOffer(msg)
     for i, offer in ipairs(currentBuyOffers) do
         if offer.Buyer == msg.From then
             local funded = offer.Funded
+            if funded > 0 then
+                local tax = math.floor(funded * 0.02)
+                Send({
+                    Target = KARD_Process,
+                    Action = "Transfer",
+                    Recipient = offer.Buyer,
+                    Quantity = tostring(funded - tax),
+                    Note = "Refund for withdrawn buy offer."
+                })
+            end
             table.remove(currentBuyOffers, i)
             print("Offer withdrawn")
             -- Optionally, you can send a message back to the buyer confirming the withdrawal
             Send({ Target = msg.From, Action = "Info-Message", Data = "Your offer has been withdrawn." })
-            Send({
-                Target = KARD_Process,
-                Action = "Transfer",
-                Recipient = msg.From,
-                Quantity = tostring(funded),
-                Note =
-                "Refund for withdrawn offer."
-            })
             return
         end
     end
@@ -130,12 +141,13 @@ function TransferFunctions.AcceptBuyOffer(msg)
     local from = msg.From
 
     -- Verify the offer exists for the selected tokenID at the provided quantity
-    local currentBuyOffers = State.TransferOffers.Buy[tokenID] or {}
+    local currentBuyOffers = State.TransferOffers.Buy[tostring(tokenID)] or {}
     local selectedOffer = nil
-
+print("attempting to find offer")
     for _, offer in ipairs(currentBuyOffers) do
         if offer.Offer == quantity then
             selectedOffer = offer
+            print("offer found")
             break
         end
     end
@@ -145,11 +157,12 @@ function TransferFunctions.AcceptBuyOffer(msg)
     end
 
     -- Verify that the sender is the owner of the token
-    if from ~= State.Tokens[tokenID].Owner then
+    if from ~= State.Tokens[tostring(tokenID)].Owner then
         error("You are not the owner of this token.")
     end
 
     -- Check if the offer is fully funded
+    print("Checking funded status")
     if selectedOffer.Funded < selectedOffer.Offer then
         selectedOffer.Accepted = true
         local remainingAmount = selectedOffer.Offer - selectedOffer.Funded
@@ -159,20 +172,43 @@ function TransferFunctions.AcceptBuyOffer(msg)
             Data = "Your offer has been accepted, but it is not fully funded. You need to fund an additional " ..
                 remainingAmount .. " units."
         })
+
+        print("refunding offers while accepted is underfunded")
+        for _, offer in ipairs(currentBuyOffers) do
+            if offer ~= selectedOffer and offer.Funded > 0 then
+                local tax = math.floor(offer.Funded * 0.02)
+                print (tax)
+                Send({
+                    Target = offer.Buyer,
+                    Action = "Refund-Notice",
+                    Data = "Your offer on Token #" .. offer.TokenID .. " was not the winning bid. You are being refunded " .. tostring(offer.Funded - tax)
+                })
+                Send({
+                    Target = KARD_Process,
+                    Action = "Transfer",
+                    Recipient = offer.Buyer,
+                    Quantity = tostring(offer.Funded - tax),
+                    Note = "Refund for non-accepted offer."
+                })
+            end
+        end
+        State.TransferOffers.Buy[tostring(tokenID)] = {}
+        table.insert(State.TransferOffers.Buy[tostring(tokenID)], selectedOffer)
         return "Offer accepted but not fully funded. Buyer notified of remaining amount."
     end
-
+print("offer not underfunded, continuing to transfer")
     -- Transfer ownership of the token
-    local oldOwner = State.Tokens[tokenID].Owner
+    local oldOwner = State.Tokens[tostring(tokenID)].Owner
     local newOwner = selectedOffer.Buyer
-    State.Tokens[tokenID].Owner = newOwner
+    State.Tokens[tostring(tokenID)].Owner = newOwner
 
     -- Find the token in State.Holders[oldOwner] and remove it
     local oldOwnerTokens = State.Holders[oldOwner]
     local actualToken = nil
     if oldOwnerTokens then
+        print("finding token")
         for i, token in ipairs(oldOwnerTokens) do
-            if token.TokenID == tonumber(tokenID) then
+            if tonumber(token.TokenID) == tonumber(tokenID) then
                 -- If the token is a character, check if it has any equipment
                 if token.Type == "Character" and token.Equipment and #token.Equipment > 0 then
                     GeneralFunctions.AutoUnequipAll(tostring(tokenID))
@@ -193,19 +229,29 @@ function TransferFunctions.AcceptBuyOffer(msg)
 
     -- Ensure the token is a fresh copy to avoid referencing issues
 
-    -- Copy the token to State.Holders[newOwner]
-
+    -- Refund all other offers that are funded but not accepted
+    print("refunding offers")
+    for _, offer in ipairs(currentBuyOffers) do
+        if offer ~= selectedOffer and offer.Funded > 0 then
+            local tax = math.floor(offer.Funded * 0.02)
+            print (tax)
+            Send({
+                Target = offer.Buyer,
+                Action = "Refund-Notice",
+                Data = "Your offer on Token #" .. offer.TokenID .. " was not the winning bid. You are being refunded " .. tostring(offer.Funded - tax)
+            })
+            Send({
+                Target = KARD_Process,
+                Action = "Transfer",
+                Recipient = offer.Buyer,
+                Quantity = tostring(offer.Funded - tax),
+                Note = "Refund for non-accepted offer."
+            })
+        end
+    end
 
     -- Remove the accepted offer from the list of buy offers
-    -- for i, offer in ipairs(currentBuyOffers) do
-    --     if offer == selectedOffer then
-    --         table.remove(currentBuyOffers, i)
-    --         break
-    --     end
-    -- end
-
-    -- Update the buy offers for the token
-    State.TransferOffers.Buy[tokenID] = nil
+    State.TransferOffers.Buy[tostring(tokenID)] = nil
 
     -- Notify the buyer that the offer has been accepted and the transfer is complete
     Send({
@@ -222,9 +268,8 @@ function TransferFunctions.AcceptBuyOffer(msg)
     Send({
         Target = KARD_Process,
         Action = "Transfer",
-        Recipient = State.Tokens[tokenID].Minter,
-        Quantity = tostring(
-            taxes),
+        Recipient = State.Tokens[tostring(tokenID)].Minter,
+        Quantity = tostring(taxes),
         Note = "Minter reward on Token Sale."
     })
 
@@ -235,12 +280,12 @@ function TransferFunctions.AcceptBuyOffer(msg)
         Action = "Transfer",
         Recipient = oldOwner,
         Quantity = tostring(sellerCut),
-        Note =
-        "Purchase of token."
+        Note = "Purchase of token."
     })
 
     return "Offer of " .. tostring(selectedOffer.Offer) .. " for token " .. tostring(tokenID) .. " accepted successfully"
 end
+
 
 function TransferFunctions.FreeTransfer(msg)
     assert(msg.TokenID, "Must Specify Token")
@@ -260,7 +305,7 @@ function TransferFunctions.FreeTransfer(msg)
     local tokenType = State.Tokens[tokenID].Type
     local newOwner = transferTo
 
-    if not tokenType == "Character" then
+    if tokenType ~= "Character" then
         tokenType = "Equipment"
     end
 
@@ -310,7 +355,19 @@ function TransferFunctions.FundOffer(Buyer, TokenID, Quantity)
 
     local quantity = tonumber(Quantity)
     local tokenID = tonumber(TokenID) -- Convert TokenID to a number for comparison
+    print("Starting to fund offer. TokenID: " .. tostring(tokenID) .. ", Buyer: " .. Buyer .. ", Quantity: " .. tostring(quantity))
+
+    if not State.TransferOffers or not State.TransferOffers.Buy then
+        print("State.TransferOffers or State.TransferOffers.Buy is nil")
+        State.TransferOffers = State.TransferOffers or {}
+        State.TransferOffers.Buy = State.TransferOffers.Buy or {}
+    end
+
     local currentBuyOffers = State.TransferOffers.Buy[tostring(tokenID)] or {}
+    if not currentBuyOffers then
+        print("No current buy offers for TokenID: " .. tostring(tokenID))
+        return
+    end
 
     local selectedOffer = nil
     print("Attempting to fund offer from " .. Buyer)
@@ -325,6 +382,7 @@ function TransferFunctions.FundOffer(Buyer, TokenID, Quantity)
     end
 
     if not selectedOffer then
+        print("No offer found from the specified Buyer for this TokenID")
         Send({
             Target = KARD_Process,
             Action = "Transfer",
@@ -337,6 +395,7 @@ function TransferFunctions.FundOffer(Buyer, TokenID, Quantity)
 
     -- Add Quantity to offer.Funded
     selectedOffer.Funded = (selectedOffer.Funded or 0) + quantity
+    print("Offer funded amount updated. New Funded Amount: " .. tostring(selectedOffer.Funded))
 
     -- Check if offer.Funded is equal to or greater than offer.Offer
     if selectedOffer.Funded >= selectedOffer.Offer then
@@ -344,6 +403,7 @@ function TransferFunctions.FundOffer(Buyer, TokenID, Quantity)
         if selectedOffer.Funded > selectedOffer.Offer then
             local overfundedAmount = tostring(selectedOffer.Funded - selectedOffer.Offer)
             selectedOffer.Funded = selectedOffer.Offer -- Adjust Funded to match the Offer amount
+            print("Offer is overfunded. Overfunded amount: " .. overfundedAmount)
             Send({
                 Target = Buyer,
                 Action = 'Refund-Notice',
@@ -370,20 +430,42 @@ function TransferFunctions.FundOffer(Buyer, TokenID, Quantity)
             local taxes = math.floor(selectedOffer.Offer * 0.025)
             local sellerCut = selectedOffer.Offer - (2 * taxes)
 
-            local oldOwner = State.Tokens[tokenID].Owner
+            if not State.Tokens then
+                print("State.Tokens is nil")
+                error("State.Tokens is nil")
+            end
+
+            if not State.Tokens[tostring(tokenID)] then
+                print("State.Tokens[tokenID] is nil for tokenID: " .. tostring(tokenID))
+                error("State.Tokens[tokenID] is nil for tokenID: " .. tostring(tokenID))
+            end
+
+            local oldOwner = State.Tokens[tostring(tokenID)].Owner
             local newOwner = selectedOffer.Buyer
+
+            if not oldOwner then
+                print("oldOwner is nil for tokenID: " .. tostring(tokenID))
+                error("oldOwner is nil for tokenID: " .. tostring(tokenID))
+            end
+
+            print("Starting token transfer. Old owner: " .. oldOwner .. ", New owner: " .. newOwner)
 
             -- Transfer the token
             local oldOwnerTokens = State.Holders[oldOwner] or {}
             local actualToken = nil
+            print("Got to this step")
 
             for i, token in ipairs(oldOwnerTokens) do
-                if token.TokenID == tokenID then
+                print("In the loop: " .. i)
+                if tonumber(token.TokenID) == tokenID then
+                    print("Found the thing")
                     -- Check if the token is equipped and handle unequipping if necessary
                     if token.Type == "Character" and token.Equipment and #token.Equipment > 0 then
+                        print("Is character")
                         GeneralFunctions.AutoUnequipAll(tostring(tokenID))
                     end
                     if token.Type ~= "Character" and token.EquippedTo then
+                        print("Is equipment and equipped")
                         Send({
                             Target = oldOwner,
                             Action = "Info-Message",
@@ -394,20 +476,29 @@ function TransferFunctions.FundOffer(Buyer, TokenID, Quantity)
                         error("Owner must Unequip this item before transfer")
                     end
                     actualToken = token
-
+                    print("Found Token")
                     if not State.Holders[newOwner] then
                         State.Holders[newOwner] = {}
+                        print("Not a holder")
                     end
+                    print("Attempting to insert")
                     table.insert(State.Holders[newOwner], actualToken)
-                    State.Tokens[tokenID].Owner = newOwner
-
+                    print("Attempting to change owner")
+                    State.Tokens[tostring(tokenID)].Owner = newOwner
+                    print("Attempting to remove")
                     table.remove(oldOwnerTokens, i)
                     break
                 end
             end
 
-
-            State.TransferOffers.Buy[tostring(tokenID)] = nil
+            if not actualToken then
+                print("actualToken is nil for tokenID: " .. tostring(tokenID))
+                error("actualToken is nil for tokenID: " .. tostring(tokenID))
+            end
+            print("Attempting to remove buy offers")
+            if State.TransferOffers.Buy[tostring(tokenID)] then
+                State.TransferOffers.Buy[tostring(tokenID)] = nil
+            end
 
             Send({
                 Target = selectedOffer.Buyer,
@@ -421,7 +512,7 @@ function TransferFunctions.FundOffer(Buyer, TokenID, Quantity)
             Send({
                 Target = KARD_Process,
                 Action = "Transfer",
-                Recipient = State.Tokens[tokenID].Minter,
+                Recipient = State.Tokens[tostring(tokenID)].Minter,
                 Quantity = tostring(taxes),
                 Note = "Minter reward on Token Sale."
             })
@@ -432,6 +523,7 @@ function TransferFunctions.FundOffer(Buyer, TokenID, Quantity)
                 Quantity = tostring(sellerCut),
                 Note = "Purchase of token."
             })
+            return
         end
     elseif selectedOffer.Funded < selectedOffer.Offer then
         -- Request more from the buyer
@@ -445,7 +537,9 @@ function TransferFunctions.FundOffer(Buyer, TokenID, Quantity)
         return
     end
 
-    -- Update the offers table in the state
+    -- Update the offers table in the state for partial funding case
+    State.TransferOffers.Buy[tostring(tokenID)] = currentBuyOffers
 end
 
 return TransferFunctions
+
