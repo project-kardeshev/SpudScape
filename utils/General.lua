@@ -67,11 +67,7 @@ function GeneralFunctions.Move(msg)
         -- Here you can implement the code to update the token's location in your data structure
         token.Location = msg.TargetLocation -- Update the token's location
 
-        local combatOnEnter = Locations[msg.TargetLocation].CombatOnEnter
-
-        if combatOnEnter then
-            CombatFunctions.EnterCombat(msg)
-        end
+        Locations[msg.TargetLocation].ActionOnEnter(msg)
 
         return "Moved from " .. currentLocation .. " to " .. msg.TargetLocation
     else
