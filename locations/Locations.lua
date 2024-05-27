@@ -1,27 +1,31 @@
 Locations = Locations or {}
 
+local nothing = function() return end
+
 Locations.Town = {
     CanEnterCombat = false,
-    CombatOnEnter = false,
-    CanMoveTo = {"Orphanage", "Woods"},
-    CanFindLoot = false,
-    Loot = {}
+    CanMoveTo = {"Orphanage", "Woods", "Tavern"},
+    ActionOnEnter = nothing
+
+}
+
+Locations.Tavern = {
+    CanEnterCombat = false,
+    CanMoveTo = {"Town"},
+    ActionOnEnter = nothing
 }
 
 Locations.Orphanage = {
     CanEnterCombat = true,
-    CombatOnEnter = false,
     CanMoveTo = {"Town"},
-    CanFindLoot = false,
-    Loot = {}
+    ActionOnEnter = nothing
+
 }
 
 Locations.Woods = {
     CanEnterCombat = true,
-    CombatOnEnter = true,
     CanMoveTo = {"Town"},
-    CanFindLoot = true,
-    Loot = {"Cool Looking Stick"}
+    ActionOnEnter = function(msg) CombatFunctions.EnterCombat(msg) end
 }
 
 return Locations

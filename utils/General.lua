@@ -29,7 +29,7 @@ function GeneralFunctions.Move(msg)
     -- Validate the required fields are present and the target location exists in the system
     assert(msg.FromToken and msg.TargetLocation, "Improperly formatted command.")
     assert(Locations[msg.TargetLocation], "Target location does not exist.")
-
+    assert(not State.ActiveCombat[tostring(msg.FromToken)], "Cannot flee from combat. Real men fight to the death.")
     -- Convert the token identifier from string to number if necessary and fetch the token
     local TokenID = tonumber(msg.FromToken)
     -- if TokenID then print("TokenID is " .. TokenID) end
