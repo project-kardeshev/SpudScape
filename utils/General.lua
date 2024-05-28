@@ -1,4 +1,3 @@
-
 GeneralFunctions = GeneralFunctions or {}
 
 function GeneralFunctions.TalkToNPC(msg)
@@ -20,7 +19,7 @@ function GeneralFunctions.TalkToNPC(msg)
     assert(NPC, "That NPC does not exist.")
 
     -- Check if the NPC has an action to perform
-    if  NPC.Action then
+    if NPC.Action then
         NPC.Action(msg)
     end
 end
@@ -85,7 +84,7 @@ function GeneralFunctions.WhereCanIMove(msg)
     local CanMoveTo = Locations[currentLocation].CanMoveTo
 
     if CanMoveTo then
-        Send({ Target = msg.From, Action = "Info-Message", Data = json.encode(CanMoveTo)})
+        Send({ Target = msg.From, Action = "Info-Message", Data = json.encode(CanMoveTo) })
     end
 end
 
@@ -212,7 +211,7 @@ function GeneralFunctions.AutoUnequipAll(tokenID)
     assert(State.Tokens[tokenID].Type == "Character", "Must unequip from a character")
 
     local characterToken = State.Tokens[tokenID]
-    
+
     -- Ensure the characterToken exists in State.Holders
     local owner = characterToken.Owner
     local characterInHolders = nil
@@ -223,7 +222,7 @@ function GeneralFunctions.AutoUnequipAll(tokenID)
         end
     end
     assert(characterInHolders, "Character token not found in holder's inventory.")
-    
+
     -- Check and unequip all items
     for _, equipmentID in ipairs(characterInHolders.Equipment or {}) do
         local equipmentToken = State.Tokens[equipmentID]
@@ -231,7 +230,7 @@ function GeneralFunctions.AutoUnequipAll(tokenID)
             equipmentToken.EquippedTo = nil
         end
     end
-    
+
     -- Clear the character's equipment fields
     characterInHolders.Equipment = {
         Weapon = {},
@@ -241,7 +240,6 @@ function GeneralFunctions.AutoUnequipAll(tokenID)
 
     return "All equipment has been unequipped from character " .. tokenID
 end
-
 
 function GeneralFunctions.Rename(TokenID, newName)
     -- Ensure TokenID is provided and a newName is specified
@@ -271,7 +269,6 @@ function GeneralFunctions.Rename(TokenID, newName)
     -- Check if the token was found and renamed
     assert(tokenFound, "Token with provided ID not found among the holder's items.")
 end
-
 
 function GeneralFunctions.GetOwner(TokenID)
     -- print(TokenID)
@@ -348,6 +345,97 @@ function GeneralFunctions.WhoCanIFight(locationName)
     end
 
     return fightList
+end
+
+function GeneralFunctions.SetParty(msg)
+    assert(msg.Tags.Party, "Must define party")
+    assert(type(msg.Tags.Party) == "string", "Party must be a string")
+    print("Received party string:" .. msg.Tags.Party)
+
+    -- Split the party string into individual numbers
+    local partyMembers = {}
+    for number in msg.Tags.Party:gmatch("[^,]+") do
+        local num = tonumber(number:match("^%s*(.-)%s*$")) -- Trim spaces and convert to number
+        assert(num, "Party must be a string of numbers separated by commas")
+        assert(State.Tokens[tostring(num)].Owner == msg.From, "Only tokens you own can be in your party")
+        assert(State.Tokens[tostring(num)].Type == "Character", "Equipment cannot join your party")
+        table.insert(partyMembers, num)
+    end
+
+    -- Add FromToken to partyMembers if not already included
+    local fromTokenID = tonumber(msg.FromToken)
+    local isIncluded = false
+    for _, member in ipairs(partyMembers) do
+        if member == fromTokenID then
+            isIncluded = true
+            break
+        end
+    end
+
+    if not isIncluded then
+        table.insert(partyMembers, fromTokenID)
+    end
+
+    print("Party members extracted:" .. table.concat(partyMembers, ", "))
+
+    assert(#partyMembers >= 2 and #partyMembers <= 5, "Parties must be 2 - 5 members.")
+
+    -- Fetch the current token
+    local currentToken = GeneralFunctions.GetTokenByID(msg.FromToken)
+    assert(currentToken, "Current token not found")
+
+    -- Fetch and validate each member of the new party
+    local partyTokens = {}
+    for _, member in ipairs(partyMembers) do
+        print("Party member:" .. member)
+        local token = GeneralFunctions.GetTokenByID(member)
+        print("Got the token")
+        assert(token and token.Location == "Tavern", "Can only set parties if all members are in the Tavern")
+        partyTokens[member] = token
+    end
+    print("all tokens found")
+
+    -- Remove current token from old parties
+    if currentToken.Party then
+        print("Current party exists, doing things")
+        for _, partyMemberID in ipairs(currentToken.Party) do
+            local oldPartyMemberToken = GeneralFunctions.GetTokenByID(partyMemberID)
+            if oldPartyMemberToken and oldPartyMemberToken.Party then
+                for i = #oldPartyMemberToken.Party, 1, -1 do
+                    if oldPartyMemberToken.Party[i] == currentToken.TokenID then
+                        table.remove(oldPartyMemberToken.Party, i)
+                        if #oldPartyMemberToken.Party < 1 then
+                            oldPartyMemberToken.Party = nil
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    print("Setting party on current token")
+    -- Set the new party for the current token, excluding its own TokenID
+    print(currentToken)
+    local newParty = {}
+    for _, member in ipairs(partyMembers) do
+        if member ~= fromTokenID then
+            table.insert(newParty, member)
+        end
+    end
+    currentToken.Party = newParty
+
+    -- Update each member in the new party to include the current token
+    for _, member in ipairs(partyMembers) do
+        print("attempting to set party for " .. member)
+        local token = partyTokens[member]
+        if token ~= currentToken then
+            if not token.Party then
+                token.Party = {}
+            end
+            table.insert(token.Party, currentToken.TokenID)
+        end
+    end
+    return "Successfully set a new party with " .. tostring(table.concat(partyMembers, ", "))
 end
 
 return GeneralFunctions

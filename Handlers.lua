@@ -54,6 +54,7 @@ Handlers.add(
                     print("TokenID not found in the note")
                     Send({Target = msg.Tags.Sender, Action = "Error-Message", Data = "Incorrectly formatted Note"})
                 end
+            else print("WTF is this for?")
             end
         end
     end
@@ -133,6 +134,24 @@ Handlers.add(
 -- General Handlers
 
 Handlers.add(
+    "SetParty",
+    Handlers.utils.hasMatchingTag("Action", "SetParty"),
+    function(msg)
+        -- Using pcall to handle potential errors during the move operation
+        local success, Message = pcall(GeneralFunctions.SetParty, msg)
+        if not success then
+            -- If the move function fails, log the error message
+            print("Error occurred while setting party: " .. Message)
+            Send({ Target = msg.From, Action = "Error-Message", Data = Message })
+            -- Optionally, you could return or handle the error in another way
+            return
+        end
+        Send({ Target = msg.From, Action = "Info-Message", Data = Message })
+    end
+
+)
+
+Handlers.add(
     "move",
     Handlers.utils.hasMatchingTag("Action", "Move"),
     function(msg)
@@ -141,6 +160,8 @@ Handlers.add(
         if not success then
             -- If the move function fails, log the error message
             print("Error occurred during move: " .. Message)
+            Send({ Target = msg.From, Action = "Error-Message", Data = Message })
+            return
             -- Optionally, you could return or handle the error in another way
         end
         Send({ Target = msg.From, Action = "Info-Message", Data = Message })
