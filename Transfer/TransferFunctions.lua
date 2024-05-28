@@ -29,16 +29,16 @@ function TransferFunctions.UpdateFundingStatus(oldOffer, newOffer)
 end
 
 function TransferFunctions.MakeOffer(msg)
-    assert(msg.TokenID, "Must Specify Token")
-    assert(msg.Offer, "Must provide amount for offer")
-    assert(tonumber(msg.Offer), "Offer amount must be a number")
-    assert(tonumber(msg.Offer) >= 1000, "Offer amount must be at least 1000")
+    assert(msg.Tags.TokenID, "Must Specify Token")
+    assert(msg.Tags.Offer, "Must provide amount for offer")
+    assert(tonumber(msg.Tags.Offer), "Offer amount must be a number")
+    assert(tonumber(msg.Tags.Offer) >= 1000, "Offer amount must be at least 1000")
 
-    local tokenOwner = GeneralFunctions.GetOwner(msg.TokenID)
+    local tokenOwner = GeneralFunctions.GetOwner(msg.Tags.TokenID)
     assert(msg.From ~= tokenOwner, "Cannot make offers on Tokens you own.")
 
     -- Check if there's an accepted offer for the token
-    local currentBuyOffers = State.TransferOffers.Buy[tostring(msg.TokenID)] or {}
+    local currentBuyOffers = State.TransferOffers.Buy[tostring(msg.Tags.TokenID)] or {}
     for _, existingOffer in ipairs(currentBuyOffers) do
         if existingOffer.Accepted then
             error("Cannot make a new offer on this token as there is already an accepted offer.")
@@ -46,12 +46,12 @@ function TransferFunctions.MakeOffer(msg)
     end
 
     local newOffer = {
-        TokenID = msg.TokenID,
+        TokenID = msg.Tags.TokenID,
         Owner = tokenOwner,
         Accepted = false,
         Funded = 0, -- Default state for Funded is 0
         Buyer = msg.From,
-        Offer = tonumber(msg.Offer)
+        Offer = tonumber(msg.Tags.Offer)
     }
 
     -- Ensure State.TransferOffers.Buy is initialized
@@ -87,7 +87,7 @@ function TransferFunctions.MakeOffer(msg)
     end
 
     -- Update the offers table in the state
-    State.TransferOffers.Buy[msg.TokenID] = currentBuyOffers
+    State.TransferOffers.Buy[msg.Tags.TokenID] = currentBuyOffers
 
     return "Offer of " ..
         tostring(newOffer.Offer) .. " for token " .. tostring(newOffer.TokenID) .. " created successfully"
@@ -96,10 +96,10 @@ end
 
 
 function TransferFunctions.WithdrawBuyOffer(msg)
-    assert(msg.TokenID, "Must specify Token ID")
+    assert(msg.Tags.TokenID, "Must specify Token ID")
     assert(msg.From, "Must specify the buyer")
 
-    local currentBuyOffers = State.TransferOffers.Buy[msg.TokenID]
+    local currentBuyOffers = State.TransferOffers.Buy[msg.Tags.TokenID]
     if not currentBuyOffers then
         print("No current buy offers for this token")
         return
@@ -132,12 +132,12 @@ function TransferFunctions.WithdrawBuyOffer(msg)
 end
 
 function TransferFunctions.AcceptBuyOffer(msg)
-    assert(msg.TokenID, "Must Specify Token")
-    assert(msg.Quantity, "Must provide quantity for offer")
-    assert(tonumber(msg.Quantity), "Quantity must be a number")
+    assert(msg.Tags.TokenID, "Must Specify Token")
+    assert(msg.Tags.Quantity, "Must provide quantity for offer")
+    assert(tonumber(msg.Tags.Quantity), "Quantity must be a number")
 
-    local tokenID = msg.TokenID
-    local quantity = tonumber(msg.Quantity)
+    local tokenID = msg.Tags.TokenID
+    local quantity = tonumber(msg.Tags.Quantity)
     local from = msg.From
 
     -- Verify the offer exists for the selected tokenID at the provided quantity
@@ -288,11 +288,11 @@ end
 
 
 function TransferFunctions.FreeTransfer(msg)
-    assert(msg.TokenID, "Must Specify Token")
-    assert(msg.TransferTo, "Must specify the recipient of the transfer")
+    assert(msg.Tags.TokenID, "Must Specify Token")
+    assert(msg.Tags.TransferTo, "Must specify the recipient of the transfer")
 
-    local tokenID = msg.TokenID
-    local transferTo = msg.TransferTo
+    local tokenID = msg.Tags.TokenID
+    local transferTo = msg.Tags.TransferTo
     local from = msg.From
 
     -- Verify that the sender is the owner of the token

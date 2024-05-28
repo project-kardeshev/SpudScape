@@ -25,11 +25,11 @@ local function DeepCopy(original)
 end
 
 function CombatFunctions.EnterCombat(msg)
-    assert(msg.FromToken, "Improperly formatted message")
-    assert(not State.ActiveCombat[tostring(msg.FromToken)], "Already in combat")
-    local owner = GeneralFunctions.getOwner(tonumber(msg.FromToken))
+    assert(msg.Tags.FromToken, "Improperly formatted message")
+    assert(not State.ActiveCombat[tostring(msg.Tags.FromToken)], "Already in combat")
+    local owner = GeneralFunctions.getOwner(tonumber(msg.Tags.FromToken))
     assert(owner == msg.From, "Unauthorized")
-    local token = GeneralFunctions.getTokenByID(tonumber(msg.FromToken))
+    local token = GeneralFunctions.getTokenByID(tonumber(msg.Tags.FromToken))
     if not token then
         error("Token not found")
     end
@@ -68,7 +68,7 @@ function CombatFunctions.EnterCombat(msg)
         end
     end
 
-    State.ActiveCombat[tostring(msg.FromToken)] = combatInstance
+    State.ActiveCombat[tostring(msg.Tags.FromToken)] = combatInstance
     print("Combat initiated between " .. combatInstance.Player.Name .. " and " .. combatInstance.NPC.Name)
     Send({
         Target = msg.From,
@@ -192,14 +192,14 @@ function CombatFunctions.SelectNPCAttack(npcAttacks)
 end
 
 function CombatFunctions.ProcessAttack(msg)
-    local combatKey = tostring(msg.FromToken)
+    local combatKey = tostring(msg.Tags.FromToken)
     assert(State.ActiveCombat[combatKey], "No active combat found for the given token.")
-    local owner = GeneralFunctions.GetOwner(tonumber(msg.FromToken))
+    local owner = GeneralFunctions.GetOwner(tonumber(msg.Tags.FromToken))
     assert(owner == msg.From, "Sender is not the owner of the token.")
 
     local combatInstance = State.ActiveCombat[combatKey]
-    local playerAttack = assert(combatInstance.Player.Attacks[msg.Attack], "Specified attack is not available.")
-    print("Processing player's attack: " .. msg.Attack)
+    local playerAttack = assert(combatInstance.Player.Attacks[msg.Tags.Attack], "Specified attack is not available.")
+    print("Processing player's attack: " .. msg.Tags.Attack)
 
     local XPOnWin = combatInstance["NPC"].GivesXP
     local firstAttacker = CombatFunctions.DetermineFirstAttacker(combatInstance.Player, combatInstance.NPC)

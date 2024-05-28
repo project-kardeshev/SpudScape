@@ -9,7 +9,7 @@ NonCombatNPCList.OldWoodsGuy = {
         B = "What do you want from me? You already have my coolest stick!"
     },
     Action = function(msg)
-        local tokenID = msg.FromToken
+        local tokenID = msg.Tags.FromToken
         local holder = GeneralFunctions.GetOwner(tokenID)
         local hasStick = false
 

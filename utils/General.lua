@@ -2,15 +2,15 @@
 GeneralFunctions = GeneralFunctions or {}
 
 function GeneralFunctions.TalkToNPC(msg)
-    assert(msg.TargetNPC, "Who are you trying to talk to?")
-    assert(msg.FromToken, "Who is trying to talk?")
+    assert(msg.Tags.TargetNPC, "Who are you trying to talk to?")
+    assert(msg.Tags.FromToken, "Who is trying to talk?")
 
     -- Initialize variable to hold the NPC once found
     local NPC = nil
 
     -- Iterate over all NPCs to find the one with the matching Name
     for _, npcDetails in pairs(NonCombatNPCList) do
-        if npcDetails.Name == msg.TargetNPC then
+        if npcDetails.Name == msg.Tags.TargetNPC then
             NPC = npcDetails
             break
         end
@@ -27,11 +27,11 @@ end
 
 function GeneralFunctions.Move(msg)
     -- Validate the required fields are present and the target location exists in the system
-    assert(msg.FromToken and msg.TargetLocation, "Improperly formatted command.")
-    assert(Locations[msg.TargetLocation], "Target location does not exist.")
-    assert(not State.ActiveCombat[tostring(msg.FromToken)], "Cannot flee from combat. Real men fight to the death.")
+    assert(msg.Tags.FromToken and msg.Tags.TargetLocation, "Improperly formatted command.")
+    assert(Locations[msg.Tags.TargetLocation], "Target location does not exist.")
+    assert(not State.ActiveCombat[tostring(msg.Tags.FromToken)], "Cannot flee from combat. Real men fight to the death.")
     -- Convert the token identifier from string to number if necessary and fetch the token
-    local TokenID = tonumber(msg.FromToken)
+    local TokenID = tonumber(msg.Tags.FromToken)
     -- if TokenID then print("TokenID is " .. TokenID) end
     local token = GeneralFunctions.GetTokenByID(tonumber(TokenID))
     -- if token then print(token) end
@@ -56,29 +56,29 @@ function GeneralFunctions.Move(msg)
     -- Check if the target location is in the list of possible targets
     local isMoveAllowed = false
     for _, location in ipairs(possibleTargets) do
-        if location == msg.TargetLocation then
+        if location == msg.Tags.TargetLocation then
             isMoveAllowed = true
             break
         end
     end
 
     if isMoveAllowed then
-        print("Move from " .. currentLocation .. " to " .. msg.TargetLocation .. " is allowed.")
+        print("Move from " .. currentLocation .. " to " .. msg.Tags.TargetLocation .. " is allowed.")
         -- Here you can implement the code to update the token's location in your data structure
-        token.Location = msg.TargetLocation -- Update the token's location
+        token.Location = msg.Tags.TargetLocation -- Update the token's location
 
-        Locations[msg.TargetLocation].ActionOnEnter(msg)
+        Locations[msg.Tags.TargetLocation].ActionOnEnter(msg)
 
-        return "Moved from " .. currentLocation .. " to " .. msg.TargetLocation
+        return "Moved from " .. currentLocation .. " to " .. msg.Tags.TargetLocation
     else
-        print("Move from " .. currentLocation .. " to " .. msg.TargetLocation .. " is not allowed.")
+        print("Move from " .. currentLocation .. " to " .. msg.Tags.TargetLocation .. " is not allowed.")
         error("Cannot move to the specified location.")
     end
 end
 
 function GeneralFunctions.WhereCanIMove(msg)
-    assert(msg.FromToken, "Improperly formatted command")
-    local token = GeneralFunctions.GetTokenByID(msg.FromToken)
+    assert(msg.Tags.FromToken, "Improperly formatted command")
+    local token = GeneralFunctions.GetTokenByID(msg.Tags.FromToken)
     if not token then return end
     local currentLocation = token.Location
 
@@ -106,15 +106,15 @@ function GeneralFunctions.LevelUp(token)
 end
 
 function GeneralFunctions.SpendPoint(msg)
-    assert(msg.FromToken, "Must define token")
-    local owner = GeneralFunctions.getOwner(msg.FromToken)
+    assert(msg.Tags.FromToken, "Must define token")
+    local owner = GeneralFunctions.getOwner(msg.Tags.FromToken)
     assert(owner == msg.From, "Unauthorized")
-    assert(msg.SpendOn, "Must define where point to be spent")
-    local token = GeneralFunctions.getTokenByID(tonumber(msg.FromToken))
+    assert(msg.Tags.SpendOn, "Must define where point to be spent")
+    local token = GeneralFunctions.getTokenByID(tonumber(msg.Tags.FromToken))
 
     if token then
         assert(token.AvailableStatPoints > 0, "No Stat points to spend.")
-        token.Stats[msg.SpendOn] = token.Stats[msg.SpendOn] + 1
+        token.Stats[msg.Tags.SpendOn] = token.Stats[msg.Tags.SpendOn] + 1
         token.AvailableStatPoints = token.AvailableStatPoints - 1
     else
         error("Token not found.")
@@ -122,26 +122,26 @@ function GeneralFunctions.SpendPoint(msg)
 end
 
 function GeneralFunctions.Equip(msg)
-    assert(msg.FromToken and msg.EquipmentID, "Must specify Equipment ID and which token will be equipping")
-    assert(State.Tokens[msg.FromToken] and State.Tokens[msg.EquipmentID], "Token does not exist")
-    assert(State.Tokens[msg.FromToken].Type == "Character", "Must equip to a character")
-    assert(State.Tokens[msg.FromToken].Owner == msg.From and State.Tokens[msg.EquipmentID].Owner == msg.From,
+    assert(msg.Tags.FromToken and msg.Tags.EquipmentID, "Must specify Equipment ID and which token will be equipping")
+    assert(State.Tokens[msg.Tags.FromToken] and State.Tokens[msg.Tags.EquipmentID], "Token does not exist")
+    assert(State.Tokens[msg.Tags.FromToken].Type == "Character", "Must equip to a character")
+    assert(State.Tokens[msg.Tags.FromToken].Owner == msg.From and State.Tokens[msg.Tags.EquipmentID].Owner == msg.From,
         "Must own both tokens to equip")
     -- print("This last one")
-    local tokenType = State.Tokens[msg.EquipmentID].Type
+    local tokenType = State.Tokens[msg.Tags.EquipmentID].Type
     print(tokenType)
     -- Retrieve the character token to which equipment will be attached
     local characterToken = nil
     for _, item in ipairs(State.Holders[msg.From] or {}) do
-        if item.TokenID == tonumber(msg.FromToken) then
+        if item.TokenID == tonumber(msg.Tags.FromToken) then
             characterToken = item
             break
         end
     end
     -- print(characterToken)
     local equipmentToken = nil
-    for _, item in ipairs(State.Holders[msg.From] or {}) do
-        if item.TokenID == tonumber(msg.EquipmentID) then
+    for _, item in ipairs(State.Holders[msg.Tags.From] or {}) do
+        if item.TokenID == tonumber(msg.Tags.EquipmentID) then
             equipmentToken = item
             break
         end
@@ -171,18 +171,18 @@ function GeneralFunctions.Equip(msg)
 end
 
 function GeneralFunctions.UnEquip(msg)
-    assert(msg.FromToken and msg.EquipmentID, "Must specify Equipment ID and which token will be Unequipping")
-    assert(State.Tokens[msg.FromToken] and State.Tokens[msg.EquipmentID], "Token does not exist")
-    assert(State.Tokens[msg.FromToken].Type == "Character", "Must Unequip from a character")
-    assert(State.Tokens[msg.FromToken].Owner == msg.From and State.Tokens[msg.EquipmentID].Owner == msg.From,
+    assert(msg.Tags.FromToken and msg.Tags.EquipmentID, "Must specify Equipment ID and which token will be Unequipping")
+    assert(State.Tokens[msg.Tags.FromToken] and State.Tokens[msg.Tags.EquipmentID], "Token does not exist")
+    assert(State.Tokens[msg.Tags.FromToken].Type == "Character", "Must Unequip from a character")
+    assert(State.Tokens[msg.Tags.FromToken].Owner == msg.From and State.Tokens[msg.Tags.EquipmentID].Owner == msg.From,
         "Must own both tokens")
 
-    local tokenType = State.Tokens[msg.EquipmentID].Type
+    local tokenType = State.Tokens[msg.Tags.EquipmentID].Type
     print(tokenType)
 
     local characterToken = nil
     for _, item in ipairs(State.Holders[msg.From] or {}) do
-        if item.TokenID == tonumber(msg.FromToken) then
+        if item.TokenID == tonumber(msg.Tags.FromToken) then
             characterToken = item
             break
         end
@@ -190,7 +190,7 @@ function GeneralFunctions.UnEquip(msg)
     -- print(characterToken)
     local equipmentToken = nil
     for _, item in ipairs(State.Holders[msg.From] or {}) do
-        if item.TokenID == tonumber(msg.EquipmentID) then
+        if item.TokenID == tonumber(msg.Tags.EquipmentID) then
             equipmentToken = item
             break
         end

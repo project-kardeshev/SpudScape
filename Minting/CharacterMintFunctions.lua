@@ -15,10 +15,10 @@ end
 
 function CharacterMintFunctions.InitializeCharacterMint(msg)
     print("This is the first step")
-    assert(msg.Rarity, "Please define the rarity of the character you want to mint.")
+    assert(msg.Tags.Rarity, "Please define the rarity of the character you want to mint.")
     assert(msg.From and msg['Block-Height'], "Missing necessary minting parameters.")
 
-    local rarity = msg.Rarity
+    local rarity = msg.Tags.Rarity
     local cost = CharacterMintFunctions.GetCost(rarity)
     local mintOffer = {
         Minter = msg.From,
@@ -56,15 +56,15 @@ end
 function CharacterMintFunctions.RevokeCharacterOffer(msg)
     assert(State.PendingMints[msg.From], "You have no pending character mints.")
 
-    if msg.Rarity then
+    if msg.Tags.Rarity then
         -- If rarity is specified, remove only the specific offer
         local found = false
         for i, offer in ipairs(State.PendingMints[msg.From]) do
-            if offer.Rarity == msg.Rarity then
+            if offer.Rarity == msg.Tags.Rarity then
                 tabType = selectedToken.InitialState.Type,le.remove(State.PendingMints[msg.From], i)
                 found = true
                 Send({ Target = msg.From, Data = "Your pending mint offer for a " ..
-                msg.Rarity .. " character has been revoked." })
+                msg.Tags.Rarity .. " character has been revoked." })
                 break
             end
         end

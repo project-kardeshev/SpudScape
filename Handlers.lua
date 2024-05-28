@@ -32,8 +32,8 @@ Handlers.add(
     "ProcessPayment",
     IsCreditMessage,
     function(msg)
-        if msg.Note then
-            local note = string.lower(msg.Note)
+        if msg["X-Note"] then
+            local note = string.lower(msg["X-Note"])
             if note == "mint character" then
                 print("Received mint request")
                 -- Using pcall to handle errors in InitiateCharacterMint
@@ -46,13 +46,13 @@ Handlers.add(
                 if tokenID then
                     print("Received fund offer request for TokenID: " .. tokenID)
                     -- Using pcall to handle errors in FundOffer
-                    local success, errorMessage = pcall(TransferFunctions.FundOffer, msg.Sender, tonumber(tokenID), msg.Quantity)
+                    local success, errorMessage = pcall(TransferFunctions.FundOffer, msg.Tags.Sender, tonumber(tokenID), msg.Tags.Quantity)
                     if not success then
                         print("Error processing fund offer request: " .. errorMessage)
                     end
                 else
                     print("TokenID not found in the note")
-                    Send({Target = msg.Sender, Action = "Error-Message", Data = "Incorrectly formatted Note"})
+                    Send({Target = msg.Tags.Sender, Action = "Error-Message", Data = "Incorrectly formatted Note"})
                 end
             end
         end
@@ -93,11 +93,11 @@ Handlers.add(
     "GetTokenByID",
     Handlers.utils.hasMatchingTag("Action", "GetTokenByID"),
     function(msg)
-        if msg.TokenID then
+        if msg.Tags.TokenID then
             -- print(msg)
             -- print(msg.TokenID)
             -- Using pcall to handle the potential error in GetTokenByID
-            local success, tokenOrError = pcall(GeneralFunctions.GetTokenByID, tonumber(msg.TokenID))
+            local success, tokenOrError = pcall(GeneralFunctions.GetTokenByID, tonumber(msg.Tags.TokenID))
             -- print(success)
             if success then
                 -- If pcall succeeds, tokenOrError contains the returned token
@@ -121,7 +121,7 @@ Handlers.add(
     Handlers.utils.hasMatchingTag("Action", "GetTokens"),
     function(msg)
         -- Determine the owner based on whether msg.Owner is provided; default to msg.From if not
-        local owner = msg.Holder or msg.From
+        local owner = msg.Tags.Holder or msg.From
         print(owner)
         -- Retrieve tokens for the determined owner, encode them to JSON, and send
         local tokens = json.encode(GeneralFunctions.GetTokens(owner))
@@ -171,7 +171,7 @@ Handlers.add(
     Handlers.utils.hasMatchingTag("Action", "WhoCanITalkTo"),
     function(msg)
         -- First, ensure that the FromToken is provided in the message
-        if not msg.FromToken then
+        if not msg.Tags.FromToken then
             Send({
                 Target = msg.From,
                 Action = "Error-Message",
@@ -182,7 +182,7 @@ Handlers.add(
         end
 
         -- Retrieve the token using its ID to get the location
-        local token = GeneralFunctions.GetTokenByID(tonumber(msg.FromToken))
+        local token = GeneralFunctions.GetTokenByID(tonumber(msg.Tags.FromToken))
         if not token or not token.Location then
             Send({ Target = msg.From, Action = "Error-Message", Data = "Token not found or location undefined." })
             return
@@ -258,7 +258,7 @@ Handlers.add(
     Handlers.utils.hasMatchingTag("Action", "Rename"),
     function(msg)
         -- First check if all necessary parameters are provided
-        if not msg.FromToken or not msg.NewName then
+        if not msg.Tags.FromToken or not msg.Tags.NewName then
             Send({
                 Target = msg.From,
                 Action = "Error-Message",
@@ -269,7 +269,7 @@ Handlers.add(
         end
 
         -- Get the owner of the token
-        local owner = GeneralFunctions.GetOwner(msg.FromToken)
+        local owner = GeneralFunctions.GetOwner(msg.Tags.FromToken)
         if not owner then
             Send({ Target = msg.From, Action = "Error-Message", Data = "Token not found or no owner available." })
             return
@@ -287,7 +287,7 @@ Handlers.add(
         end
 
         -- Attempt to rename the token using a protected call
-        local success, messageOrError = pcall(GeneralFunctions.Rename, msg.FromToken, msg.NewName)
+        local success, messageOrError = pcall(GeneralFunctions.Rename, msg.Tags.FromToken, msg.Tags.NewName)
         if success then
             Send({ Target = msg.From, Action = "Info-Message", Data = messageOrError or "Token renamed successfully." })
         else
@@ -330,16 +330,16 @@ Handlers.add(
     "WhoCanIFight",
     Handlers.utils.hasMatchingTag("Action", "WhoCanIFight"),
     function(msg)
-        if not msg.FromToken then
+        if not msg.Tags.FromToken then
             Send({ Target = msg.From, Action = "Error-Message", Data = "Must provide a Token ID as 'FromToken'." })
             return
         end
 
-        local targetLocation = msg.TargetLocation
+        local targetLocation = msg.Tags.TargetLocation
         if not targetLocation then
             local holderTokens = State.Holders[msg.From]
             for _, token in ipairs(holderTokens or {}) do
-                if tostring(token.TokenID) == msg.FromToken then
+                if tostring(token.TokenID) == msg.Tags.FromToken then
                     targetLocation = token.Location
                     break
                 end
