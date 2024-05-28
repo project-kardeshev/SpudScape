@@ -65,6 +65,13 @@ function GeneralFunctions.Move(msg)
         print("Move from " .. currentLocation .. " to " .. msg.Tags.TargetLocation .. " is allowed.")
         -- Here you can implement the code to update the token's location in your data structure
         token.Location = msg.Tags.TargetLocation -- Update the token's location
+        if token.Party then
+            for _, partyMember in ipairs(token.Party) do
+                local partyMemberToken = GeneralFunctions.GetTokenByID(partyMember)
+                partyMemberToken.Location = msg.Tags.TargetLocation
+            end
+
+        end
 
         Locations[msg.Tags.TargetLocation].ActionOnEnter(msg)
 
