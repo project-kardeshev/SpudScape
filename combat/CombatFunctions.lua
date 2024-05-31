@@ -1,9 +1,8 @@
-
 CombatFunctions = CombatFunctions or {}
 
 -- Helper function to check if a table contains a particular value
-function table.contains(table, element)
-    for _, value in pairs(table) do
+function table.contains(tbl, element)
+    for _, value in pairs(tbl) do
         if value == element then
             return true
         end
@@ -24,15 +23,42 @@ local function DeepCopy(original)
     return copy
 end
 
+function CombatFunctions.IsPartyInCombat(TokenID)
+    -- Retrieve the token
+    local token = GeneralFunctions.GetTokenByID(TokenID)
+    assert(token, "Token not found")
+
+    -- Check if the token itself is in combat
+    if State.ActiveCombat[tostring(TokenID)] then
+        return true
+    end
+
+    -- If the token has a party, check each party member
+    if token.Party then
+        for _, partyMemberID in ipairs(token.Party) do
+            if State.ActiveCombat[tostring(partyMemberID)] then
+                return true
+            end
+        end
+    end
+
+    -- If neither the token nor any of its party members are in combat, return false
+    return false
+end
+
 function CombatFunctions.EnterCombat(msg)
     assert(msg.Tags.FromToken, "Improperly formatted message")
-    assert(not State.ActiveCombat[tostring(msg.Tags.FromToken)], "Already in combat")
-    local owner = GeneralFunctions.getOwner(tonumber(msg.Tags.FromToken))
+    local isInCombat = CombatFunctions.IsPartyInCombat(msg.Tags.FromToken)
+    assert(not isInCombat, "Already in combat")
+
+    local owner = GeneralFunctions.GetOwner(tonumber(msg.Tags.FromToken))
     assert(owner == msg.From, "Unauthorized")
-    local token = GeneralFunctions.getTokenByID(tonumber(msg.Tags.FromToken))
+
+    local token = GeneralFunctions.GetTokenByID(tonumber(msg.Tags.FromToken))
     if not token then
         error("Token not found")
     end
+
     local currentLocation = token.Location
 
     local possibleEnemies = {}
@@ -47,71 +73,93 @@ function CombatFunctions.EnterCombat(msg)
     end
 
     local selectedEnemy = possibleEnemies[math.random(#possibleEnemies)]
+
+    -- Create a table for the combat instance
     local combatInstance = {
-        Player = DeepCopy(token),      -- Deep copy the player's token
-        NPC = DeepCopy(selectedEnemy), -- Deep copy the selected NPC
+        Player = {},
+        NPC = { ["1"] = DeepCopy(selectedEnemy) },
         StartHeight = msg["Block-Height"],
         LastAction = msg["Block-Height"]
     }
 
-    -- Incorporating equipment stats and attacks into the combat instance
-    combatInstance.Player.Attacks = DeepCopy(combatInstance.Player.Attacks) or {}
-    for _, eqType in ipairs({ "Weapon", "Armor", "Accessory" }) do
-        local equipment = token.Equipment and token.Equipment[eqType]
-        if equipment and next(equipment) then -- Check if the equipment is not an empty table
-            for stat, value in pairs(equipment.Stats or {}) do
-                combatInstance.Player.Stats[stat] = (combatInstance.Player.Stats[stat] or 0) + value
+    -- Function to add a player's token to the combat instance
+    local function addPlayerTokenToCombat(playerToken)
+        local playerCombatToken = DeepCopy(playerToken)
+        playerCombatToken.Attacks = DeepCopy(playerCombatToken.Attacks) or {}
+        for _, eqType in ipairs({ "Weapon", "Armor", "Accessory" }) do
+            local equipment = playerToken.Equipment and playerToken.Equipment[eqType]
+            if equipment and next(equipment) then -- Check if the equipment is not an empty table
+                for stat, value in pairs(equipment.Stats or {}) do
+                    playerCombatToken.Stats[stat] = (playerCombatToken.Stats[stat] or 0) + value
+                end
+                for attackName, attackDetails in pairs(equipment.GivesAttacks or {}) do
+                    playerCombatToken.Attacks[attackName] = DeepCopy(attackDetails)
+                end
             end
-            for attackName, attackDetails in pairs(equipment.GivesAttacks or {}) do
-                combatInstance.Player.Attacks[attackName] = DeepCopy(attackDetails)
+        end
+        combatInstance.Player[tostring(playerCombatToken.TokenID)] = playerCombatToken
+    end
+
+    -- Add the main player's token to the combat instance
+    addPlayerTokenToCombat(token)
+
+    -- Add party members' tokens to the combat instance
+    if token.Party then
+        for _, partyMemberID in ipairs(token.Party) do
+            local partyMemberToken = GeneralFunctions.GetTokenByID(partyMemberID)
+            if partyMemberToken then
+                addPlayerTokenToCombat(partyMemberToken)
             end
         end
     end
 
     State.ActiveCombat[tostring(msg.Tags.FromToken)] = combatInstance
-    print("Combat initiated between " .. combatInstance.Player.Name .. " and " .. combatInstance.NPC.Name)
+    print("Combat initiated between " ..
+        combatInstance.Player[tostring(token.TokenID)].Name .. " and " .. combatInstance.NPC["1"].Name)
     Send({
         Target = msg.From,
         Action = "CombatInfo",
         IsEndCombat = "false",
         CombatState = json.encode(combatInstance),
-        Data = "Combat initiated between " .. combatInstance.Player.Name .. " and " .. combatInstance.NPC.Name
+        Data = "Combat initiated between " ..
+            combatInstance.Player[tostring(token.TokenID)].Name .. " and " .. combatInstance.NPC["1"].Name
     })
 end
 
-function CombatFunctions.DetermineFirstAttacker(player, npc)
-    local playerSpeed = player.Stats.Speed -- This might later include modifications
-    local npcSpeed = npc.Stats.Speed       -- Same as above
+function CombatFunctions.DetermineFirstAttacker(playerParty, npcParty)
+    -- Collect all combatants with their speeds
+    local combatants = {}
 
-    if playerSpeed > npcSpeed then
-        return "Player"
-    elseif npcSpeed > playerSpeed then
-        return "NPC"
-    else
-        -- If speeds are equal, decide randomly or by another attribute
-        return math.random() < 0.5 and "Player" or "NPC"
+    for tokenID, player in pairs(playerParty) do
+        table.insert(combatants, { tokenID = tokenID, speed = player.Stats.Speed, type = "Player" })
     end
+
+    for npcID, npc in pairs(npcParty) do
+        table.insert(combatants, { tokenID = npcID, speed = npc.Stats.Speed, type = "NPC" })
+    end
+
+    -- Sort combatants by speed in descending order
+    table.sort(combatants, function(a, b) return a.speed > b.speed end)
+
+    return combatants
 end
 
-function CombatFunctions.DoesAttackLand(combatInstance, whoseTurn, attack)
-    -- Determine the attacker and defender using Lua's and/or pattern
-    local attacker = (whoseTurn == "Player") and combatInstance.Player or combatInstance.NPC
-    local defender = (whoseTurn == "Player") and combatInstance.NPC or combatInstance.Player
-
+function CombatFunctions.DoesAttackLand(attacker, defender, attack)
+    print("Determining accuracy")
+    print("attacker")
+    print(attacker)
     local attackerPrecision = attacker.Stats.Precision
     local attackAccuracy = attack.Accuracy
+    print("defender")
+    print(defender)
     local defenderEvasion = defender.Stats.Evasion
 
-    -- Modify the base chance to hit to incorporate a more favorable early game hit chance
-    -- The adjustment ensures that low values still provide a reasonable chance to hit
     local baseChanceToHit = 50 + (attackerPrecision + attackAccuracy - defenderEvasion) * 5
     local randomFactor = math.random(80, 120) / 100 -- This factor adds variability
     local finalChanceToHit = baseChanceToHit * randomFactor
 
-    -- Debug output to see the calculated values
     print("Final chance to hit is " .. finalChanceToHit)
 
-    -- Define a threshold for hitting, adjusted for better early game performance
     if finalChanceToHit >= 50 then
         print("Attack lands!")
         return true
@@ -122,28 +170,19 @@ function CombatFunctions.DoesAttackLand(combatInstance, whoseTurn, attack)
 end
 
 function CombatFunctions.DetermineDamage(attacker, attack, defender)
-    -- Retrieve the necessary combat stats
     local attackerPower = attacker.Stats.Power
     local attackForce = attack.Force
     local defenderDefense = defender.Stats.Defense
 
-    -- Generate random factors for the attack and defense
     local attackRandomFactor = math.random(1, 10)
     local defenseRandomFactor = math.random(1, 10)
 
-    -- Calculate the preliminary attack value
     local attackValue = attackerPower * attackForce * attackRandomFactor
-
-    -- Calculate the effective defense
     local effectiveDefense = defenderDefense * defenseRandomFactor
 
-    -- Determine the final damage value
     local damage = attackValue / effectiveDefense
-
-    -- Round down the damage to the nearest whole number
     damage = math.floor(damage)
 
-    -- Ensure damage is at least 1 unless it is 0 (to prevent negative or zero damage while ensuring some impact)
     if damage < 1 and damage > 0 then
         damage = 1
     end
@@ -153,42 +192,67 @@ function CombatFunctions.DetermineDamage(attacker, attack, defender)
 end
 
 function CombatFunctions.FinalizeCombat(combatKey, winner, loser, XP)
-    local owner = GeneralFunctions.getOwner(combatKey)
+    local owner = GeneralFunctions.GetOwner(combatKey)
     local message
-    local messageList = State.ActiveCombat[combatKey]["NPC"].Messages
+    local messageList = State.ActiveCombat[combatKey]["NPC"]["1"].Messages
+
     if winner == "Player" then
-        local playerToken = GeneralFunctions.GetTokenByID(tonumber(State.ActiveCombat[combatKey]["Player"].TokenID))
         message = messageList.OnDefeated
-        if playerToken then
-            playerToken.CurrentXP = playerToken.CurrentXP + XP
+        local playerTokens = State.ActiveCombat[combatKey]["Player"]
+        local numPlayers = 0
+        local alivePlayers = 0
+        local deadPlayers = 0
+
+        for _, playerToken in pairs(playerTokens) do
+            numPlayers = numPlayers + 1
+            if playerToken.Stats.Health > 0 then
+                alivePlayers = alivePlayers + 1
+            else
+                deadPlayers = deadPlayers + 1
+            end
+        end
+
+        local baseXP = math.floor(XP / numPlayers)
+        local aliveXP = baseXP
+        local deadXP = math.floor(baseXP / 2)
+
+        for _, playerToken in pairs(playerTokens) do
+            if playerToken.Stats.Health > 0 then
+                playerToken.CurrentXP = playerToken.CurrentXP + aliveXP
+            else
+                playerToken.CurrentXP = playerToken.CurrentXP + deadXP
+            end
+
             if playerToken.CurrentXP >= playerToken.LevelUpXP then
                 GeneralFunctions.LevelUp(playerToken)
             end
-            print("Player wins! New XP: " .. playerToken.CurrentXP .. "/" .. playerToken.LevelUpXP)
-            -- Send({ Target = owner, Action = "CombatInfo", Data = "Player won the battle! Gained " .. tostring(XP) .. " XP."})
-        else
-            error("Player token not found.")
-            -- Send({ Target = owner, Action = "CombatInfo", Data = "Player was defeated by " .. State.ActiveCombat[combatKey]["NPC"].Name .. ". Maybe you should try getting some better equipment."})
+
+            print(playerToken.Name .. " gains XP: " .. playerToken.CurrentXP .. "/" .. playerToken.LevelUpXP)
         end
+
+        print("Player wins! XP distributed among party members.")
     else
         print("NPC wins! " .. State.ActiveCombat[combatKey].Player.Name .. " has been defeated.")
         message = messageList.OnPlayerDefeated
     end
 
-    -- Remove the combat instance
     print("Combat ended. Removing combat instance for TokenID: " .. combatKey)
     State.ActiveCombat[combatKey] = nil
     print("message is: " .. message)
     Send({ Target = owner, Action = "CombatInfo", IsEndCombat = "true", Data = message })
 end
 
-function CombatFunctions.SelectNPCAttack(npcAttacks)
-    local npcAttackKeys = {}
-    for attackName, _ in pairs(npcAttacks) do
-        table.insert(npcAttackKeys, attackName)
+function CombatFunctions.SelectNPCAttack(npcParty)
+    local npcAttacks = {}
+    for npcID, npc in pairs(npcParty) do
+        local npcAttackKeys = {}
+        for attackName, _ in pairs(npc.Attacks) do
+            table.insert(npcAttackKeys, attackName)
+        end
+        local randomIndex = math.random(#npcAttackKeys)
+        npcAttacks[npcID] = npc.Attacks[npcAttackKeys[randomIndex]]
     end
-    local randomIndex = math.random(#npcAttackKeys)
-    return npcAttacks[npcAttackKeys[randomIndex]]
+    return npcAttacks
 end
 
 function CombatFunctions.ProcessAttack(msg)
@@ -198,51 +262,141 @@ function CombatFunctions.ProcessAttack(msg)
     assert(owner == msg.From, "Sender is not the owner of the token.")
 
     local combatInstance = State.ActiveCombat[combatKey]
-    local playerAttack = assert(combatInstance.Player.Attacks[msg.Tags.Attack], "Specified attack is not available.")
-    print("Processing player's attack: " .. msg.Tags.Attack)
 
-    local XPOnWin = combatInstance["NPC"].GivesXP
-    local firstAttacker = CombatFunctions.DetermineFirstAttacker(combatInstance.Player, combatInstance.NPC)
-    local secondAttacker = (firstAttacker == "Player") and "NPC" or "Player"
+    local attacks = {}
+    if msg.Tags.Attack then
+        for tokenID, attackName, target in msg.Tags.Attack:gmatch("(%d+)%s*=%s*([^:]+)%s*:*(%d*)") do
+            attackName = attackName:match("^%s*(.-)%s*$") -- Trim whitespace from attack name
+            target = target and target ~= "" and target or tostring(math.random(#combatInstance.NPC))
+            attacks[tokenID] = { attack = attackName, target = target }
+        end
+    elseif msg.Tags.Attacks then
+        print("Parsing Attacks: " .. msg.Tags.Attacks)
+        for tokenID, attackName, target in msg.Tags.Attacks:gmatch("(%d+)%s*=%s*([^:]+)%s*:*(%d*)") do
+            attackName = attackName:match("^%s*(.-)%s*$") -- Trim whitespace from attack name
+            target = target and target ~= "" and target or tostring(math.random(#combatInstance.NPC))
+            attacks[tokenID] = { attack = attackName, target = target }
+        end
+    end
 
-    local npcAttack = CombatFunctions.SelectNPCAttack(combatInstance.NPC.Attacks)
-    print("NPC's randomly selected attack: " .. npcAttack.Name)
+    print("Attack list")
+    for k, v in pairs(attacks) do
+        print(k, v.attack, v.target)
+    end
+
+    assert(#attacks == #combatInstance.Player,
+        "The number of attacks specified does not match the number of active players in combat.")
+
+    -- Validate attacks
+    for tokenID, attackInfo in pairs(attacks) do
+        local token = combatInstance.Player[tokenID]
+        assert(token, "Token not part of the combat")
+        assert(token.Stats.Health > 0, "Cannot attack with a dead token")
+        assert(token.Attacks[attackInfo.attack], "Attack not available for token")
+    end
+
+    local XPOnWin = combatInstance.NPC["1"].GivesXP
+    print("Selecting first attacker")
+    local combatOrder = CombatFunctions.DetermineFirstAttacker(combatInstance.Player, combatInstance.NPC)
+    print("First attacker selected")
+    print("Selecting NPC attack")
+    local npcAttacks = CombatFunctions.SelectNPCAttack(combatInstance.NPC)
+    print("NPC attack selected")
 
     local events = {}
-    local attackers = {
-        Player = { combatant = combatInstance.Player, attack = playerAttack },
-        NPC = { combatant = combatInstance.NPC, attack = npcAttack }
-    }
+    local npcAttacked = {}
 
-    for _, turn in ipairs({ firstAttacker, secondAttacker }) do
-        local attackerInfo = attackers[turn]
-        local defenderInfo = attackers[(turn == "Player") and "NPC" or "Player"]
-        local attackLands = CombatFunctions.DoesAttackLand(combatInstance, turn, attackerInfo.attack)
+    local playerTokens = {}
+    for tokenID in pairs(combatInstance.Player) do
+        table.insert(playerTokens, tokenID)
+    end
 
-        if attackLands then
-            local damage = CombatFunctions.DetermineDamage(attackerInfo.combatant, attackerInfo.attack,
-                defenderInfo.combatant)
-            defenderInfo.combatant.Stats.Health = defenderInfo.combatant.Stats.Health - damage
-            events[#events + 1] = turn ..
-            " attacked with " .. attackerInfo.attack.Name .. " and dealt " .. damage .. " damage."
-            if defenderInfo.combatant.Stats.Health <= 0 then
-                print(defenderInfo.combatant.Name .. " has been defeated.")
-                CombatFunctions.FinalizeCombat(combatKey, turn, (turn == "Player") and "NPC" or "Player", XPOnWin)
-                return "Combat ended. " .. defenderInfo.combatant.Name .. " defeated."
+    for i, combatant in ipairs(combatOrder) do
+        print("Entering Combat loop # " .. i)
+        if combatant.type == "Player" then
+            local attackerInfo = combatInstance.Player[combatant.tokenID]
+            local attackName = attacks[combatant.tokenID].attack
+            local targetID = attacks[combatant.tokenID].target
+            local attack = attackerInfo.Attacks[attackName]
+            print("Determining accuracy for loop " .. i)
+            local attackLands = CombatFunctions.DoesAttackLand(attackerInfo, combatInstance.NPC[targetID], attack)
+            print("accuracy determined for loop " .. i)
+            if attackLands then
+                print("Determining Damage for loop " .. i)
+                local damage = CombatFunctions.DetermineDamage(attackerInfo, attack, combatInstance.NPC[targetID])
+                print("Damage determined for loop " .. i)
+                print("Referencing Stats for health removal")
+                combatInstance.NPC[targetID].Stats.Health = combatInstance.NPC[targetID].Stats.Health - damage
+                print("Health removed")
+                events[#events + 1] = attackerInfo.Name ..
+                    " attacked " ..
+                    combatInstance.NPC[targetID].Name .. " with " .. attackName .. " and dealt " .. damage .. " damage."
+                print("Checking if NPC is dead")
+                if combatInstance.NPC[targetID].Stats.Health <= 0 then
+                    print(combatInstance.NPC[targetID].Name .. " has been defeated.")
+                    print("Finalizing combat in loop " .. i)
+                    CombatFunctions.FinalizeCombat(combatKey, "Player", "NPC", XPOnWin)
+                    return "Combat ended. " .. combatInstance.NPC[targetID].Name .. " defeated."
+                end
+            else
+                events[#events + 1] = attackerInfo.Name ..
+                    " attacked " .. combatInstance.NPC[targetID].Name .. " with " .. attackName .. " and missed."
             end
         else
-            events[#events + 1] = turn .. " attacked with " .. attackerInfo.attack.Name .. " and missed."
+            print("entering the else block")
+            if not npcAttacked[combatant.tokenID] then
+                npcAttacked[combatant.tokenID] = true
+                print("npc attacks")
+                print(npcAttacks)
+                local npc = combatInstance.NPC[combatant.tokenID]
+                local attackName = npcAttacks[combatant.tokenID].Name
+                print("choosing attack")
+                local chosenAttack = npcAttacks[combatant.tokenID]
+                print("getting targetID")
+                local targetID = tostring(playerTokens[math.random(#playerTokens)])
+                print("Target id is : " .. targetID)
+                local playerToken = combatInstance.Player[targetID]
+                print(playerToken)
+                if playerToken and playerToken.Stats.Health > 0 then
+                    print("Does NPC attack land?")
+                    local attackLands = CombatFunctions.DoesAttackLand(npc, playerToken, chosenAttack)
+                    print(attackLands)
+                    if attackLands then
+                        local damage = CombatFunctions.DetermineDamage(npc, chosenAttack, playerToken)
+                        playerToken.Stats.Health = playerToken.Stats.Health - damage
+                        events[#events + 1] = npc.Name ..
+                            " attacked " ..
+                            playerToken.Name ..
+                            " with " .. attackName .. " and dealt " .. damage .. " damage."
+                        if playerToken.Stats.Health <= 0 then
+                            print(playerToken.Name .. " has been defeated.")
+                            -- Handle player defeat
+                        end
+                    else
+                        events[#events + 1] = npc.Name ..
+                            " attacked " ..
+                            playerToken.Name .. " with " .. attackName .. " and missed."
+                    end
+                end
+            end
         end
     end
 
     -- Send the summary message of the round if combat did not end
     if State.ActiveCombat[combatKey] then -- Check if the combat instance still exists
         local message = table.concat(events, " ")
-        Send({ Target = msg.From, Action = "CombatInfo", IsEndCombat = "false", CombatState = json.encode(combatInstance), Data =
-        message })
+        Send({
+            Target = msg.From,
+            Action = "CombatInfo",
+            IsEndCombat = "false",
+            CombatState = json.encode(combatInstance),
+            Data = message
+        })
     end
 
     return "Round completed. Both combatants still alive."
 end
+
+
 
 return CombatFunctions
