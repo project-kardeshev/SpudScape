@@ -149,7 +149,7 @@ function CharacterMintFunctions.GenerateCharacter(rarity)
             }
         },
         Stats = {},
-        Location = "Town",
+        Location = "Tavern",
         AvailableStatPoints = 0,
         Equipment = CharacterBlueprints.TokenClasses.Character.Equipment
     }
