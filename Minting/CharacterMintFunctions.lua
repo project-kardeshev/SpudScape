@@ -196,7 +196,7 @@ for i, offer in ipairs(offers) do
                 -- Update mint numbers
                
                 State.MintNumbers[offer.Rarity] = (State.MintNumbers[offer.Rarity] or 0) + 1
-                 local currentMint = State.NextID
+
                 State.NextID = State.NextID + 1
 
                 -- Ensure the sender has a holder list and append the new character
@@ -204,14 +204,14 @@ for i, offer in ipairs(offers) do
                     State.Holders[msg.Sender] = {}
                 end
                 Token = {
-                    TokenID = currentMint,
+                    TokenID = newCharacterOrErrorMessage.TokenID,
                     Type = "Character",
                     Owner = msg.Sender,
                     Minter = msg.Sender
                 }
-                State.Tokens[tostring(currentMint)] = Token
+                State.Tokens[tostring(newCharacterOrErrorMessage.TokenID)] = Token
                 table.insert(State.Holders[msg.Sender], newCharacter)
-                Send({Target = msg.Sender, Action = "Creation-Notice", Data = "Congratulations! You have succesfully minted a new character!"})
+                Send({Target = msg.Sender, Action = "Creation-Notice", Data = "Congratulations! You have succesfully minted " .. newCharacterOrErrorMessage.Name .. " with Token ID: " .. newCharacterOrErrorMessage.TokenID .. ". You can find him at the local Tavern."})
 
                 -- Successfully handled the offer, so remove it
                 table.remove(offers, i)
